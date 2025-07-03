@@ -1,0 +1,178 @@
+# Minimal OpenTelemetry Demo Configuration
+# This is the simplest configuration to disable observability components
+# and provide your own collector configuration
+
+# Disable all observability backends
+jaeger:
+  enabled: false
+grafana:
+  enabled: false
+prometheus:
+  enabled: false
+opensearch:
+  enabled: false
+
+# Configure OpenTelemetry Collector with your custom config
+opentelemetry-collector:
+  enabled: true
+  mode: deployment
+
+  # Replace this config section with your own
+  config:
+    receivers:
+      otlp:
+        protocols:
+          http:
+            # Since this collector needs to receive data from the web, enable cors for all origins
+            # `allowed_origins` can be refined for your deployment domain
+            cors:
+              allowed_origins:
+                - "http://*"
+                - "https://*"
+      httpcheck/frontend-proxy:
+        targets:
+          - endpoint: http://frontend-proxy:8080
+      redis:
+        endpoint: "valkey-cart:6379"
+        collection_interval: 10s
+
+    exporters:
+      otlp:
+        endpoint: mediator.causely:4317
+        compression: none
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: http://0.0.0.0:9090/metrics
+
+    processors:
+      # This processor is used to help limit high cardinality on next.js span names
+      # When this PR is merged (and released) we can remove this transform processor
+      # https://github.com/vercel/next.js/pull/64852
+      transform:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              # could be removed when https://github.com/vercel/next.js/pull/64852 is fixed upstream
+              - replace_pattern(name, "\\?.*", "")
+              - replace_match(name, "GET /api/products/*", "GET /api/products/{productId}")
+      resource:
+        attributes:
+          - key: service.instance.id
+            from_attribute: k8s.pod.uid
+            action: insert
+      batch:
+        timeout: 1s
+      k8sattributes:
+        auth_type: "serviceAccount"
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.deployment.name
+            - k8s.namespace.name
+            - k8s.node.name
+            - k8s.pod.start_time
+      # Optional: Filter out internal spans
+      filter:
+        error_mode: ignore
+        traces:
+          span:
+            - 'kind.string == "Internal"'
+
+    connectors:
+      spanmetrics: {}
+
+    service:
+      pipelines:
+        traces:
+          processors: [filter, k8sattributes, resource, transform, batch]
+          exporters: [otlp, debug, spanmetrics]
+        metrics:
+          exporters: [debug, prometheus]
+        logs:
+          exporters: [debug]
+      telemetry:
+        metrics:
+          level: detailed
+          readers:
+            - periodic:
+                interval: 10000
+                timeout: 5000
+                exporter:
+                  otlp:
+                    protocol: grpc
+                    endpoint: otel-collector:4318
+
+components:
+  flagd:
+    enabled: true
+    imageOverride:
+      repository: "ghcr.io/open-feature/flagd"
+      tag: "v0.11.1"
+    useDefault:
+      env: true
+    replicas: 1
+    ports:
+      - name: rpc
+        value: 8013
+      - name: ofrep
+        value: 8016
+    env:
+      - name: FLAGD_METRICS_EXPORTER
+        value: otel
+      - name: FLAGD_OTEL_COLLECTOR_URI
+        value: $(OTEL_COLLECTOR_NAME):4317
+    resources:
+      limits:
+        memory: 75Mi
+    command:
+      - "/flagd-build"
+      - "start"
+      - "--port"
+      - "8013"
+      - "--ofrep-port"
+      - "8016"
+      - "--uri"
+      - "file:./etc/flagd/demo.flagd.json"
+    mountedEmptyDirs:
+      - name: config-rw
+        mountPath: /etc/flagd
+    # flgad-ui as a sidecar container in the same pod so the flag json file can be shared
+    sidecarContainers:
+      - name: flagd-ui
+        useDefault:
+          env: true
+        service:
+          port: 4000
+        env:
+          - name: FLAGD_METRICS_EXPORTER
+            value: otel
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: http://$(OTEL_COLLECTOR_NAME):4318
+        resources:
+          limits:
+            memory: 300Mi
+        volumeMounts:
+          - name: config-rw
+            mountPath: /app/data
+    initContainers:
+      - name: init-config
+        image: busybox
+        command:
+          [
+            "sh",
+            "-c",
+            "cp /config-ro/demo.flagd.json /config-rw/demo.flagd.json && cat /config-rw/demo.flagd.json",
+          ]
+        volumeMounts:
+          - mountPath: /config-ro
+            name: config-ro
+          - mountPath: /config-rw
+            name: config-rw
+    additionalVolumes:
+      - name: config-ro
+        configMap:
+          name: flagd-config
