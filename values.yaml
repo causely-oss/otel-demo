@@ -16,7 +16,11 @@ opensearch:
 opentelemetry-collector:
   enabled: true
   mode: deployment
-
+  image:
+    repository: "otel/opentelemetry-collector-contrib"
+  presets:
+    kubernetesAttributes:
+      enabled: true
   config:
     receivers:
       otlp:
@@ -31,8 +35,35 @@ opentelemetry-collector:
       httpcheck/frontend-proxy:
         targets:
           - endpoint: http://frontend-proxy:8080
+      nginx:
+        endpoint: http://image-provider:8081/status
+        collection_interval: 10s
+      postgresql:
+        endpoint: "postgresql:5432"
+        username: "root"
+        password: "otel"
+        metrics:
+          postgresql.blks_hit:
+            enabled: true
+          postgresql.blks_read:
+            enabled: true
+          postgresql.tup_fetched:
+            enabled: true
+          postgresql.tup_returned:
+            enabled: true
+          postgresql.tup_inserted:
+            enabled: true
+          postgresql.tup_updated:
+            enabled: true
+          postgresql.tup_deleted:
+            enabled: true
+          postgresql.deadlocks:
+            enabled: true
+        tls:
+          insecure: true
       redis:
         endpoint: "valkey-cart:6379"
+        username: "valkey"
         collection_interval: 10s
 
     exporters:
@@ -41,8 +72,6 @@ opentelemetry-collector:
         compression: none
         tls:
           insecure: true
-      prometheus:
-        endpoint: http://0.0.0.0:9090/metrics
 
     processors:
       # This processor is used to help limit high cardinality on next.js span names
@@ -56,6 +85,10 @@ opentelemetry-collector:
               # could be removed when https://github.com/vercel/next.js/pull/64852 is fixed upstream
               - replace_pattern(name, "\\?.*", "")
               - replace_match(name, "GET /api/products/*", "GET /api/products/{productId}")
+      resourcedetection:
+        detectors:
+          - env
+          - system
       resource:
         attributes:
           - key: service.instance.id
@@ -90,7 +123,7 @@ opentelemetry-collector:
           processors: [filter, k8sattributes, resource, transform, batch]
           exporters: [otlp, debug, spanmetrics]
         metrics:
-          exporters: [debug, prometheus]
+          exporters: [otlp, debug]
         logs:
           exporters: [debug]
       telemetry:
@@ -102,77 +135,5 @@ opentelemetry-collector:
                 timeout: 5000
                 exporter:
                   otlp:
-                    protocol: grpc
+                    protocol: http/protobuf
                     endpoint: otel-collector:4318
-
-# This may be necessary until https://github.com/open-telemetry/opentelemetry-demo/issues/2126 is resolved
-components:
-  flagd:
-    enabled: true
-    imageOverride:
-      repository: "ghcr.io/open-feature/flagd"
-      tag: "v0.11.1"
-    useDefault:
-      env: true
-    replicas: 1
-    ports:
-      - name: rpc
-        value: 8013
-      - name: ofrep
-        value: 8016
-    env:
-      - name: FLAGD_METRICS_EXPORTER
-        value: otel
-      - name: FLAGD_OTEL_COLLECTOR_URI
-        value: $(OTEL_COLLECTOR_NAME):4317
-    resources:
-      limits:
-        memory: 75Mi
-    command:
-      - "/flagd-build"
-      - "start"
-      - "--port"
-      - "8013"
-      - "--ofrep-port"
-      - "8016"
-      - "--uri"
-      - "file:./etc/flagd/demo.flagd.json"
-    mountedEmptyDirs:
-      - name: config-rw
-        mountPath: /etc/flagd
-    # flgad-ui as a sidecar container in the same pod so the flag json file can be shared
-    sidecarContainers:
-      - name: flagd-ui
-        useDefault:
-          env: true
-        service:
-          port: 4000
-        env:
-          - name: FLAGD_METRICS_EXPORTER
-            value: otel
-          - name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: http://$(OTEL_COLLECTOR_NAME):4318
-        resources:
-          limits:
-            memory: 300Mi
-        volumeMounts:
-          - name: config-rw
-            mountPath: /app/data
-    initContainers:
-      - name: init-config
-        image: busybox
-        command:
-          [
-            "sh",
-            "-c",
-            "cp /config-ro/demo.flagd.json /config-rw/demo.flagd.json && cat /config-rw/demo.flagd.json",
-          ]
-        volumeMounts:
-          - mountPath: /config-ro
-            name: config-ro
-          - mountPath: /config-rw
-            name: config-rw
-    additionalVolumes:
-      - name: config-ro
-        configMap:
-          name: flagd-config
