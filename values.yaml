@@ -12,12 +12,11 @@ prometheus:
 opensearch:
   enabled: false
 
-# Configure OpenTelemetry Collector with your custom config
+# Configure OpenTelemetry Collector with custom config for Causely
 opentelemetry-collector:
   enabled: true
   mode: deployment
 
-  # Replace this config section with your own
   config:
     receivers:
       otlp:
@@ -106,6 +105,7 @@ opentelemetry-collector:
                     protocol: grpc
                     endpoint: otel-collector:4318
 
+# This may be necessary until https://github.com/open-telemetry/opentelemetry-demo/issues/2126 is resolved
 components:
   flagd:
     enabled: true
