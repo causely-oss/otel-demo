@@ -51,6 +51,12 @@ To simulate incidents in the deployed demo application go to <http://localhost:8
 
 After a while you will see the root cause for the scenario being detected by [Causely](https://www.causely.ai/).
 
+### Scenario: Fail payment service
+
+For example you can set the feature flag `paymentFailure` to `75%`. After a few minutes Causely will pinpoint the root cause `Service Malfunction` for the `payment` service, which impacts 4 other services.
+
+![A screenshot of the Causely UI showing the root cause on service `payment`](./images/root-cause-on-service-payment.png)
+
 ## License
 
 This project is licensed under the Apache 2.0 License.
