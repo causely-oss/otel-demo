@@ -1,0 +1,10 @@
+id: clean
+name: Clean Environment (No Fault)
+fault_category: none
+fault_mechanism: none
+entry_service: none
+affected_services: []
+applicable_user_stories:
+  - Q1
+  - Q2
+  - Q3

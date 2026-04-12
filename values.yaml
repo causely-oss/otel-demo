@@ -12,6 +12,13 @@ prometheus:
 opensearch:
   enabled: false
 
+components:
+  load-generator:
+    env:
+      - name: LOCUST_USERS
+        value: "100"
+    resources: {}
+
 # Configure OpenTelemetry Collector with custom config for Causely
 opentelemetry-collector:
   enabled: true
@@ -67,7 +74,7 @@ opentelemetry-collector:
         collection_interval: 10s
 
     exporters:
-      otlp:
+      otlp/causely:
         endpoint: mediator.causely:4317
         compression: none
         tls:
@@ -121,9 +128,9 @@ opentelemetry-collector:
       pipelines:
         traces:
           processors: [filter, k8sattributes, resource, transform, batch]
-          exporters: [otlp, debug, spanmetrics]
+          exporters: [otlp/causely, spanmetrics]
         metrics:
-          exporters: [otlp, debug]
+          exporters: [otlp/causely]
         logs:
           exporters: [debug]
       telemetry:
@@ -136,4 +143,4 @@ opentelemetry-collector:
                 exporter:
                   otlp:
                     protocol: http/protobuf
-                    endpoint: otel-collector:4318
+                    endpoint: http://otel-collector:4318

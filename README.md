@@ -8,7 +8,7 @@ but it can be modified to work with other endpoints as well, just edit the [`val
 
 ```yaml
     exporters:
-      otlp:
+      otlp/causely:
         endpoint: <URL_TO_YOUR_ENDPOINT>
 ```
 
@@ -18,8 +18,7 @@ You can install the OpenTelemetry Demo using [helm](https://helm.sh/) and the [`
 
 ```bash
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-kubectl create namespace otel-demo
-helm install my-otel-demo open-telemetry/opentelemetry-demo --namespace otel-demo -f https://raw.githubusercontent.com/causely-oss/otel-demo/refs/heads/main/values.yaml
+helm upgrade --install otel-demo open-telemetry/opentelemetry-demo --create-namespace --namespace otel-demo -f https://raw.githubusercontent.com/causely-oss/otel-demo/refs/heads/main/values.yaml
 ```
 
 After you have installed the demo, deploy [Causely](htts://causely.ai), following the instructions of the [Getting Started guide](https://docs.causely.ai/getting-started/quick-setup/), e.g.
@@ -32,7 +31,7 @@ causely agent install --token ${TOKEN}
 Make sure that you enable the port forwarding for the frontend-proxy of the Demo to interact with the services (including the feature flag UI):
 
 ```bash
-kubectl --namespace otel-demo port-forward svc/frontend-proxy 8080:8080
+kubectl --namespace otel-demo port-forward svc/frontend-proxy 8080
 ```
 
 **Note**: If you use [minikube](https://minikube.sigs.k8s.io/docs/), make sure to run `minikube tunnel` in a separate terminal!
@@ -53,7 +52,7 @@ After a while you will see the root cause for the scenario being detected by [Ca
 
 ### Scenario: Fail payment service
 
-For example you can set the feature flag `paymentFailure` to `75%`. After a few minutes Causely will pinpoint the root cause `Service Malfunction` for the `payment` service, which impacts 4 other services.
+For example, you can set the feature flag `paymentFailure` to `75%`. After a few minutes Causely will pinpoint the root cause `Service Malfunction` for the `payment` service, which impacts 4 other services.
 
 ![A screenshot of the Causely UI showing the root cause on service `payment`](./images/root-cause-on-service-payment.png)
 

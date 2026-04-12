@@ -1,0 +1,38 @@
+{
+  "kubernetes": {
+    "logs": [
+      {
+        "workload": "deploy/payment",
+        "pattern": "SC2 fraud check rejected transaction: risk score exceeds threshold"
+      }
+    ],
+    "pods": [
+      {
+        "service": "payment",
+        "expected_condition": "running, no restarts — pod stays alive throughout"
+      }
+    ]
+  },
+  "application": {
+    "traffic_profiles": ["checkout-heavy"],
+    "expected_error_patterns": [
+      "transaction rejected by fraud check",
+      "rpc error: code = Internal",
+      "failed to charge"
+    ]
+  },
+  "causely": {
+    "expected_entities": [
+      "otel-demo/payment",
+      "otel-demo/checkout",
+      "otel-demo/frontend"
+    ],
+    "expected_symptoms": [
+      "RequestErrorRate_High"
+    ],
+    "expected_root_cause_candidates": [
+      "otel-demo/payment"
+    ],
+    "expected_root_cause_name": "Service Malfunction"
+  }
+}

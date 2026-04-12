@@ -1,0 +1,42 @@
+{
+  "kubernetes": {
+    "logs": [
+      {
+        "workload": "deploy/checkout",
+        "pattern": "panic: runtime error: index out of range [1] with length 1"
+      }
+    ],
+    "pods": [
+      {
+        "selector": "app.kubernetes.io/component=checkout",
+        "expect_restart_increase": true
+      }
+    ]
+  },
+  "application": {
+    "traffic_profiles": ["checkout-default", "frontend-proxy-spurious"],
+    "expected_error_patterns": [
+      "panic: runtime error: index out of range [1] with length 1"
+    ]
+  },
+  "alerts": {
+    "active_alert_names": [
+      "CheckoutServiceHighRequestErrors",
+      "CheckoutPlaceOrderHighRPCRequestErrors",
+      "FrontendProxyHighRequestErrors"
+    ]
+  },
+  "causely": {
+    "expected_entities": [
+      "otel-demo/checkout",
+      "oteldemo.CheckoutService/PlaceOrder",
+      "/api/checkout"
+    ],
+    "expected_symptoms": [
+      "RequestErrorRate_High"
+    ],
+    "expected_root_cause_candidates": [
+      "otel-demo/checkout"
+    ]
+  }
+}

@@ -1,0 +1,108 @@
+--- a/src/payment/charge.js
++++ b/src/payment/charge.js
+@@ -3,10 +3,6 @@
+ const { context, propagation, trace, metrics } = require('@opentelemetry/api');
+ const cardValidator = require('simple-card-validator');
+ const { v4: uuidv4 } = require('uuid');
+-
+-const { OpenFeature } = require('@openfeature/server-sdk');
+-const { FlagdProvider } = require('@openfeature/flagd-provider');
+-const flagProvider = new FlagdProvider();
+ 
+ const logger = require('./logger');
+ const tracer = trace.getTracer('payment');
+@@ -14,6 +10,13 @@
+ const transactionsCounter = meter.createCounter('app.payment.transactions');
+ 
+ const LOYALTY_LEVEL = ['platinum', 'gold', 'silver', 'bronze'];
++const AUDIT_BUFFER_BYTES = 32768;
++const LEAK_WARNING_INTERVAL = 250;
++const LEAK_ERROR_THRESHOLD = 3000;
++
++// Pending records for batched write to PCI compliance audit log.
++// BUG: flush() was never implemented - records accumulate in memory under load.
++const pendingAuditRecords = [];
+ 
+ /** Return random element from given array */
+ function random(arr) {
+@@ -21,22 +24,20 @@
+   return arr[index];
+ }
+ 
++function emitScenarioLog(level, message, fields = {}) {
++  const details = Object.entries(fields)
++    .map(([key, value]) => `${key}=${value}`)
++    .join(' ');
++  const suffix = details ? ` ${details}` : '';
++  process.stderr.write(`${level} payment-memory-leak ${message}${suffix}\n`);
++}
++
+ module.exports.charge = async request => {
+   const span = tracer.startSpan('charge');
+ 
+-  await OpenFeature.setProviderAndWait(flagProvider);
+-
+-  const numberVariant =  await OpenFeature.getClient().getNumberValue("paymentFailure", 0);
+-
+-  if (numberVariant > 0) {
+-    // n% chance to fail with app.loyalty.level=gold
+-    if (Math.random() < numberVariant) {
+-      span.setAttributes({'app.loyalty.level': 'gold' });
+-      span.end();
+-
+-      throw new Error('Payment request failed. Invalid token. app.loyalty.level=gold');
+-    }
+-  }
++  // Disable flagd/OpenFeature evaluation for the benchmark memory-leak scenario.
++  // This keeps the injected image focused on payment OOM behavior and avoids
++  // unrelated EventStream noise from the demo's feature-flag plumbing.
+ 
+   const {
+     creditCardNumber: number,
+@@ -84,5 +85,46 @@
+   transactionsCounter.add(1, { 'app.payment.currency': currencyCode });
+   span.end();
+ 
++  // Append to in-memory audit buffer for deferred PCI log write.
++  const pendingAuditRecordCount = pendingAuditRecords.push({
++    transactionId,
++    timestamp: new Date().toISOString(),
++    amount: request.amount,
++    cardLast4: lastFourDigits,
++    auditBuffer: Buffer.alloc(AUDIT_BUFFER_BYTES),
++  });
++  const approxBufferedMiB = (pendingAuditRecordCount * AUDIT_BUFFER_BYTES) / (1024 * 1024);
++
++  span.setAttributes({
++    'app.payment.audit_buffer_records': pendingAuditRecordCount,
++    'app.payment.audit_buffer_mib': approxBufferedMiB,
++  });
++
++  if (pendingAuditRecordCount % LEAK_WARNING_INTERVAL === 0) {
++    logger.warn({
++      pendingAuditRecordCount,
++      approxBufferedMiB,
++      transactionId,
++    }, 'SC2 payment memory leak audit buffer growth detected.');
++    emitScenarioLog('WARN', 'SC2 payment memory leak audit buffer growth detected', {
++      pending_audit_records: pendingAuditRecordCount,
++      approx_buffered_mib: approxBufferedMiB.toFixed(1),
++      transaction_id: transactionId,
++    });
++  }
++
++  if (pendingAuditRecordCount >= LEAK_ERROR_THRESHOLD && pendingAuditRecordCount % LEAK_WARNING_INTERVAL === 0) {
++    logger.error({
++      pendingAuditRecordCount,
++      approxBufferedMiB,
++      transactionId,
++    }, 'SC2 payment memory leak is approaching pod memory limit.');
++    emitScenarioLog('ERROR', 'SC2 payment memory leak is approaching pod memory limit', {
++      pending_audit_records: pendingAuditRecordCount,
++      approx_buffered_mib: approxBufferedMiB.toFixed(1),
++      transaction_id: transactionId,
++    });
++  }
++
+   return { transactionId };
+ };
