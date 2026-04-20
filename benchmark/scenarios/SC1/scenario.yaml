@@ -1,0 +1,30 @@
+id: SC1
+name: Application Regression
+fault_category: application
+fault_mechanism: code-patch
+entry_service: otel-demo/checkout
+affected_services:
+  - otel-demo/checkout
+  - otel-demo/frontend-proxy
+supporting_entities:
+  - oteldemo.CheckoutService/PlaceOrder
+  - /api/checkout
+causely_workers:
+  - RCA
+inject_wait_seconds: 90
+recover_wait_seconds: 30
+traffic_profiles:
+  - checkout-default
+noise_profiles:
+  - frontend-proxy-spurious
+alerts:
+  bundle_on: checkout-bundle-bug-on
+  bundle_off: checkout-bundle-bug-off
+applicable_user_stories:
+  - US-SRE-B
+  - US-SRE-A
+  - US-SRE-M
+  - US-DEV-B
+  - US-MGR-B
+  - US-MGR-A
+  - US-MGR-M

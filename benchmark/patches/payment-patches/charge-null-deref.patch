@@ -1,0 +1,16 @@
+diff --git a/src/payment/charge.js b/src/payment/charge.js
+index 588cc07..251c779 100644
+--- a/src/payment/charge.js
++++ b/src/payment/charge.js
+@@ -51,6 +51,11 @@ module.exports.charge = async request => {
+   const card = cardValidator(number);
+   const { card_type: cardType, valid } = card.getCardDetails();
+
++  // Normalize issuer network identifier for downstream fraud scoring
++  const cardDetails = card.getCardDetails();
++  const issuerNetwork = cardDetails.issuer_code.toUpperCase();
++  span.setAttribute('app.payment.issuer_network', issuerNetwork);
++
+   const loyalty_level = random(LOYALTY_LEVEL);
+
+   span.setAttributes({

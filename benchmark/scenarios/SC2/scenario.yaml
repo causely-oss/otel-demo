@@ -1,0 +1,23 @@
+id: SC2
+name: Payment Service Fraud Check Misconfiguration
+fault_category: application
+fault_mechanism: FRAUD_RISK_THRESHOLD constant zeroed out (0.0 instead of 0.8) in charge.js — rejects every transaction regardless of actual risk score (source patch + Docker build)
+entry_service: otel-demo/payment
+affected_services:
+  - otel-demo/payment
+  - otel-demo/checkout
+  - otel-demo/frontend
+causely_workers:
+  - RCA
+  - ServiceImpact
+inject_wait_seconds: 840
+recover_wait_seconds: 60
+traffic_profiles:
+  - checkout-heavy
+noise_profiles: []
+applicable_user_stories:
+  - US-SRE-B
+  - US-SRE-A
+  - US-DEV-B
+  - US-DEV-M
+  - US-MGR-B
