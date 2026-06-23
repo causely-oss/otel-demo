@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-demo-checkout-traffic
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/name: otel-demo-checkout-traffic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-demo-checkout-traffic
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-demo-checkout-traffic
+    spec:
+      containers:
+        - name: traffic
+          image: curlimages/curl:8.12.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              i=0
+              while true; do
+                i=$((i+1))
+                sid="scenario-checkout-${HOSTNAME}-${i}"
+                curl -sS -X POST "http://frontend-proxy:8080/api/cart" \
+                  -H "Content-Type: application/json" \
+                  -H "x-session-id: ${sid}" \
+                  -d '{"item":{"productId":"OLJCESPC7Z","quantity":1}}' >/dev/null || true
+                code="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "http://frontend-proxy:8080/api/checkout" \
+                  -H "Content-Type: application/json" \
+                  -H "x-session-id: ${sid}" \
+                  -d '{"userCurrency":"USD","address":{"streetAddress":"1600 Amphitheatre Pkwy","city":"Mountain View","state":"CA","country":"United States","zipCode":"94043"},"email":"scenario@example.com","creditCard":{"creditCardNumber":"4111111111111111","creditCardCvv":"123","creditCardExpirationMonth":"12","creditCardExpirationYear":"2030"}}' || echo "000")"
+                echo "checkout_http=${code} sid=${sid}"
+                sleep 0.3
+              done
