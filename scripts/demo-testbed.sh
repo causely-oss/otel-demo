@@ -24,10 +24,7 @@ Commands:
   setup                    Create/reuse kind cluster, deploy OTel Demo, install Chaos Mesh
                            Leaves load-generator scaled to 0 (quiet by default).
                            Run 'traffic-on' to resume load or 'inject <scenario>' to start a benchmark run.
-                           If the 'causely' namespace exists at setup time, automatically
-                           applies manifests/otel-collector/values-causely-traces.yaml to
-                           wire the OTel collector to export traces to mediator.causely-mediation:54318.
-                           Without Causely, deploys in baseline mode (no trace export to Causely).
+                           Always applies values.yaml to export traces and metrics to Causely.
   start-port-forward       Expose OTel Demo frontend on localhost:8080
   stop-port-forward        Stop frontend port-forward
   chaos-on                 Apply checkout PodChaos experiment
@@ -36,7 +33,7 @@ Commands:
   full-reset               Recover all benchmark scenarios, restore checkout, remove chaos, and resume background traffic
   traffic-on               Restore the default OTel demo load-generator replica count
   validate                 Validate pod health, localhost checks, telemetry flow, chaos apply/revert
-                           When Causely is present, also verifies mediator.causely-mediation:54318 is reachable.
+                           Also verifies mediator.causely:4317 is reachable.
   status                   Print key namespace resources
 EOF
 }
@@ -148,6 +145,8 @@ deploy_otel_demo() {
     upgrade --install "$OTEL_RELEASE" open-telemetry/opentelemetry-demo
     --namespace "$OTEL_NAMESPACE"
     --create-namespace
+    --values "${ROOT_DIR}/values.yaml"
+    --force-conflicts
     --wait
     --timeout 15m
   )
@@ -369,7 +368,7 @@ check_telemetry_flow() {
     if grep -q '"otelcol.signal": "logs"' <<<"$pod_logs"; then
       logs_seen=1
     fi
-    if grep -q "causely-gateway" <<<"$pod_logs" && \
+    if grep -q "otlp/causely" <<<"$pod_logs" && \
        grep -qE "(connection refused|failed to export|rpc error|Unavailable)" <<<"$pod_logs"; then
       causely_errors=1
     fi
@@ -384,10 +383,10 @@ check_telemetry_flow() {
 
   if kubectl get namespace "$CAUSELY_NAMESPACE" >/dev/null 2>&1; then
     if [[ "$causely_errors" -eq 1 ]]; then
-      echo "OTel collector is failing to reach mediator.causely-mediation:54318 — Causely will have no topology data. Check that Causely is running and the mediator service is reachable." >&2
+      echo "OTel collector is failing to reach mediator.causely:4317 — Causely will have no topology data. Check that Causely is running and the mediator service is reachable." >&2
       return 1
     fi
-    log "Causely trace export: mediator:54318 reachable, no export errors detected"
+    log "Causely trace export: mediator:4317 reachable, no export errors detected"
   fi
 }
 
