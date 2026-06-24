@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-demo-frontend-proxy-spurious-traffic
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/name: otel-demo-frontend-proxy-spurious-traffic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-demo-frontend-proxy-spurious-traffic
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-demo-frontend-proxy-spurious-traffic
+    spec:
+      containers:
+        - name: traffic
+          image: curlimages/curl:8.12.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              i=0
+              while true; do
+                i=$((i+1))
+                rid="spurious-frontend-proxy-${HOSTNAME}-${i}"
+                code="$(curl -sS -o /dev/null -w "%{http_code}" \
+                  "http://frontend-proxy:8080/this-route-does-not-exist" \
+                  -H "x-request-id: ${rid}" || echo "000")"
+                echo "frontend_proxy_spurious_http=${code} request_id=${rid}"
+                sleep 0.2
+              done
