@@ -27,7 +27,7 @@ Install the Causely mediator from the [welcome page](https://portal.causely.app/
 
 before running it (required for kind and minikube).
 
-<video src="./assets/install_mediator.mp4" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/0b70cae8-0867-48be-a4f4-0abcfb61b3b1" controls width="100%"></video>
 
 
 Clone the OTel demo setup for Causely repo:
