@@ -4,8 +4,6 @@ This repo sets up a local Kubernetes environment for testing and demonstrating C
 
 The primary scenario targets the checkout service with a realistic application logic regression: a cart bundle optimization that assumes at least two items and panics on single-item orders. A second benchmark scenario covers a payment service fraud check misconfiguration that rejects every transaction. All scenarios have defined recovery paths and expected Causely signals to validate against.
 
-The repo also includes a small MCP harness (`demo-mcp-harness/`) for testing Causely's MCP server. Depending on the exposed MCP surface, it can verify either a basic `ask_causely` answer or the structured data-layer tools.
-
 ### Deployment modes
 
 The demo supports two modes controlled by whether Causely is deployed before `setup` runs:
@@ -296,11 +294,6 @@ Look for panic lines similar to:
 panic: runtime error: index out of range [1] with length 1
 ```
 
-MCP diagnosis:
-
-```bash
-uv run --directory demo-mcp-harness python causely_mcp_smoke.py diagnose-checkout
-```
 
 Expected signal:
 
@@ -355,153 +348,4 @@ Helm upgrade is idempotent — this only changes the collector config, all other
 ./scripts/demo-testbed.sh validate
 ```
 
-The validate step checks that the collector is reaching `causely-gateway` without connection errors. You can also confirm topology is populated via the Causely MCP:
-
-```bash
-# Should return edges once traces have been flowing for ~2 minutes
-uv run --directory demo-mcp-harness python causely_mcp_smoke.py data-layer-e2e --service-name otel-demo/checkout --window-minutes 5
-```
-
----
-
-## MCP Harness
-
-The `demo-mcp-harness/` directory contains a small smoke test for Causely's MCP server. The working baseline in this repo is: connect to MCP, inspect the exposed surface, and run a simple `AskCausely` health question.
-
-### 1. Local MCP Environment Setup
-
-The harness connects to `http://portal.causely.localhost/mcp`. Three things must be in place before it will work.
-
-**1. `/etc/hosts` entry**
-
-The `portal.causely.localhost` hostname must resolve locally. Add this line to `/etc/hosts` if it isn't already there:
-
-```
-127.0.0.1   localhost portal.causely.localhost gw.causely.localhost api.causely.localhost
-```
-
-**2. Copilot and MCP enabled**
-
-Both `copilot_controller` and `mcp` are enabled by default in `helm/values/dev.yaml`. No Helm changes are needed.
-
-The only required step is creating the LLM API key secret:
-
-```bash
-kubectl create secret generic \
-    --namespace causely \
-    --from-literal="LLM_API_KEY=<YOUR_API_KEY>" \
-    causely-copilot-controller
-```
-
-Prepare the local MCP demo environment:
-
-```bash
-bash scripts/setup-mcp-local-demo.sh
-```
-
-This script applies the local MCP repository-context patch, rebuilds the API binary used by the dev deployment, restarts the local Causely services, and waits for MCP plus Copilot to be ready.
-
-Clear the local MCP patch later if needed:
-
-```bash
-bash scripts/clear-mcp-local-context.sh
-```
-
-Then rebuild and restart the API:
-
-```bash
-cd ../causely
-GOOS=linux GOARCH=arm64 go build -o cmd/out/services-linux-arm64 ./cmd/services
-kubectl -n causely rollout restart deploy/causely-api
-kubectl -n causely rollout status deploy/causely-api
-```
-
-### 2. Start The Demo Application
-
-Start the primary checkout scenario:
-
-```bash
-./scripts/checkout-scenarios.sh scenario-start
-```
-
-### 3. Run The MCP Smoke Test
-
-Run the basic MCP smoke flow:
-
-```bash
-bash scripts/run-mcp-local-smoke.sh
-```
-
-This script does not rebuild or restart anything. It inspects the current MCP surface and then runs the matching smoke flow: `ask_causely` when that tool is exposed, otherwise the structured data-layer checkout flow.
-
-To override the default URL if your setup uses a different host:
-
-```bash
-CAUSELY_MCP_URL=http://<your-host>/mcp \
-  uv run --directory demo-mcp-harness python causely_mcp_smoke.py inspect
-```
-
-### Commands
-
-List the MCP server surface:
-
-```bash
-uv run --directory demo-mcp-harness python causely_mcp_smoke.py inspect
-```
-
-Run the lightweight `AskCausely` health question:
-
-```bash
-uv run --directory demo-mcp-harness python causely_mcp_smoke.py ask-health
-```
-
-Run the heavier checkout diagnosis flow:
-
-```bash
-uv run --directory demo-mcp-harness python causely_mcp_smoke.py diagnose-checkout
-```
-
-The heavier diagnosis path is useful for development and investigation, but in the current local setup it can still time out even when the basic MCP path is healthy.
-
-Run the direct MCP data-layer E2E flow:
-
-```bash
-uv run --directory demo-mcp-harness python causely_mcp_smoke.py data-layer-e2e --service-name otel-demo/checkout --window-minutes 30
-```
-
-This flow validates the deterministic semantic evidence path:
-
-1. `get_entities`
-2. `get_alerts`
-3. `get_symptoms`
-4. `get_root_causes`
-5. `get_metrics`
-6. `get_logs`
-7. `get_topology`
-
-If data-layer tools are not exposed yet, the harness returns a readiness issue with missing tool names.
-
-Run a Gemini-driven SRE MCP agent (dynamic tool selection, optional remediation):
-
-```bash
-cp .env.example .env
-```
-
-Set `GEMINI_API_KEY` in `.env`, then run:
-
-```bash
-  uv run --directory demo-mcp-harness python causely_mcp_sre_agent.py \
-  --goal "Evaluate the environment, identify active issues, and remediate safely if needed." \
-  --max-steps 10 \
-  --allow-remediation
-```
-
-This agent does not hardcode the triage path. It chooses MCP actions step-by-step using the model, writes a full run trace to `output/mcp-scenarios/sre-agent-run.json`, and can execute one of the safe built-in remediation actions (`scenario-recover`, `clean-slate`, `chaos-off`) when enabled.
-
-### Readiness Checks
-
-The harness distinguishes between three states:
-
-- **Fully working** — The active MCP surface answers its matching smoke flow. Exit code `0`.
-- **MCP reachable, no user context** — `causely://services` returns no services, or `AskCausely` returns `user not found`. This means the MCP request is missing repository-aware user context. Check that Causely Copilot and the MCP local configuration are properly wired. Exit code `2`.
-- **MCP reachable, `ask_causely` not usable** — The tool returns a generic error. Verify Copilot and MCP local configuration. Exit code `2`.
+The validate step checks that the collector is reaching `causely-gateway` without connection errors. 
